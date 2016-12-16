@@ -503,26 +503,35 @@ pageButtons.forEach(function (btn) {
     evt.preventDefault();
     var searched = attr(btn, 'data-searched');
     var startIndex = attr(btn, 'data-start-index');
-    performSearch(searchUri + searched/* + '&startIndex=' + startIndex*/ + '&start=' + startIndex);
+    performSearch(searched, +startIndex);
   });
 });
 
 
-function performSearch(search) {
+function performSearch(search, startIndex) {
   pageButtons.forEach(function (el) {
     attr(el, 'disabled', 'disabled');
     attr(el, 'data-searched', null);
     attr(el, 'data-start-index', null);
   });
 
+  var size = 5;
+
   xhr({
     uri: searchUri,
     method: 'POST',
     body: JSON.stringify({
-      "query": {
-        "multi_match" : {
-          "query":  search,
-          "fields": [ "title^5", "body" ]
+      query: {
+        multi_match : {
+          query:  search,
+          fields: [ "title^5", "body" ]
+        }
+      },
+      from: startIndex,
+      size: size,
+      "highlight": {
+        "fields" : {
+          "body" : {"fragment_size" : 50, "number_of_fragments" : 3}
         }
       }
     }),
@@ -544,25 +553,9 @@ function performSearch(search) {
 
         if (hits && hits.length) {
           renderedResults = hits.map(function (item) {
-            var description = item._source.body
-              .split('\n')
-              .filter(function(line) {
-                return line.indexOf(search) !== -1;
-              })
-              .slice(0, 3)
-              .map(function(line) {
-                return line
-                  .split(search)
-                  .map(function (entry) {
-                    if (entry.length > 100) {
-                      return entry.substr(0, 10) + '(...)' + entry.substr(entry.length - 10, 10);
-                    }
+            var description = item.highlight ? item.highlight.body.join('<br>') : item._source.body.substr(0, 100);
 
-                    return entry;
-                  })
-                  .join('<strong>' + search + '</strong>');
-              })
-              .join('<br>');
+            console.log(item);
 
             return searchResultTmpl(Object.assign(item._source, {
               version: version,
@@ -570,19 +563,19 @@ function performSearch(search) {
             }));
           }).join('');
 
-          // var previous = results.queries.previousPage ? results.queries.previousPage[0] : false;
-          // if (previous) {
-          //   attr(pageButtons[0], 'disabled', null);
-          //   attr(pageButtons[0], 'data-searched', previous.searchTerms);
-          //   attr(pageButtons[0], 'data-start-index', previous.startIndex);
-          // }
-          //
-          // var next = results.queries.nextPage ? results.queries.nextPage[0] : false;
-          // if (next) {
-          //   attr(pageButtons[1], 'disabled', null);
-          //   attr(pageButtons[1], 'data-searched', next.searchTerms);
-          //   attr(pageButtons[1], 'data-start-index', next.startIndex);
-          // }
+          var previous = startIndex - size;
+          if (previous >= 0) {
+            attr(pageButtons[0], 'disabled', null);
+            attr(pageButtons[0], 'data-searched', search);
+            attr(pageButtons[0], 'data-start-index', previous);
+          }
+
+          var next = startIndex + size;
+          if (next < results.hits.total) {
+            attr(pageButtons[1], 'disabled', null);
+            attr(pageButtons[1], 'data-searched', search);
+            attr(pageButtons[1], 'data-start-index', next);
+          }
         }
         else {
           renderedResults += '<li class="no-results">no results</li>';
@@ -614,7 +607,7 @@ function searchEvent(evt) {
   }
   bodyClasses.add('search-open');
 
-  performSearch(search);
+  performSearch(search, 0);
 }
 
 searchField.addEventListener('change', searchEvent);
