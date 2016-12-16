@@ -474,7 +474,7 @@ var searchResultTmpl = require('lodash.template')(
     '<% if (imgPathFromRoot) { %>' +
     '<a class="thumbnail" href="/manual/<%= version %><%= pathFromRoot %>"><img src="/manual/<%= version %><%- imgPathFromRoot %>" /></a>' +
     '<% } %>' +
-    '<p><%= body.substr(0, 200) %></p>' +
+    '<p><%= description %></p>' +
     '</div>' +
   '</li>'
 );
@@ -544,8 +544,29 @@ function performSearch(search) {
 
         if (hits && hits.length) {
           renderedResults = hits.map(function (item) {
+            var description = item._source.body
+              .split('\n')
+              .filter(function(line) {
+                return line.indexOf(search) !== -1;
+              })
+              .slice(0, 3)
+              .map(function(line) {
+                return line
+                  .split(search)
+                  .map(function (entry) {
+                    if (entry.length > 100) {
+                      return entry.substr(0, 10) + '(...)' + entry.substr(entry.length - 10, 10);
+                    }
+
+                    return entry;
+                  })
+                  .join('<strong>' + search + '</strong>');
+              })
+              .join('<br>');
+
             return searchResultTmpl(Object.assign(item._source, {
-              version: version
+              version: version,
+              description: description
             }));
           }).join('');
 
