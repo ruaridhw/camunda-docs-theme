@@ -469,12 +469,12 @@ docLoaded(attachDiagrams);
 
 var searchResultTmpl = require('lodash.template')(
   '<li>' +
-    '<h2><a href="<%= link %>"><%= title %></a></h2>' +
-    '<div class="description<% if (pagemap && pagemap.cse_thumbnail) { %> with-thumbnail<% } %>">' +
-      '<% if (pagemap && pagemap.cse_thumbnail) { %>' +
-      '<a class="thumbnail" href="<%= link %>"><img src="<%- pagemap.cse_thumbnail[0].src %>" /></a>' +
-      '<% } %>' +
-      '<p><%= htmlSnippet %></p>' +
+    '<h2><a href="/manual/<%= version %><%= pathFromRoot %>"><%= title %></a></h2>' +
+    '<div class="description<% if (imgPathFromRoot) { %> with-thumbnail<% } %>">' +
+    '<% if (imgPathFromRoot) { %>' +
+    '<a class="thumbnail" href="/manual/<%= version %><%= pathFromRoot %>"><img src="/manual/<%= version %><%- imgPathFromRoot %>" /></a>' +
+    '<% } %>' +
+    '<p><%= body.substr(0, 200) %></p>' +
     '</div>' +
   '</li>'
 );
@@ -482,7 +482,8 @@ var searchResultTmpl = require('lodash.template')(
 var gSearchApiKey = 'AIzaSyCMGfdDaSfjqv5zYoS0mTJnOT3e9MURWkU';
 var gSearchCtx = '007121298374582869478:yaec0vxmc7e';
 var bodyClasses = document.body.classList;
-var searchUri = 'https://www.googleapis.com/customsearch/v1?key=' + gSearchApiKey + '&cx=' + gSearchCtx + '&q=';
+// var searchUri = 'https://www.googleapis.com/customsearch/v1?key=' + gSearchApiKey + '&cx=' + gSearchCtx + '&q=';
+var searchUri = 'http://localhost:9200/camunda/docs/_search';
 var searchField = query('.search-input');
 var searchResults = query('.search-results');
 var searchUnderlay = query('.search-underlay');
@@ -507,7 +508,7 @@ pageButtons.forEach(function (btn) {
 });
 
 
-function performSearch(uri) {
+function performSearch(search) {
   pageButtons.forEach(function (el) {
     attr(el, 'disabled', 'disabled');
     attr(el, 'data-searched', null);
@@ -515,7 +516,16 @@ function performSearch(uri) {
   });
 
   xhr({
-    uri: uri,
+    uri: searchUri,
+    method: 'POST',
+    body: JSON.stringify({
+      "query": {
+        "multi_match" : {
+          "query":  search,
+          "fields": [ "title^5", "body" ]
+        }
+      }
+    }),
     headers: {
       'Accept': 'application/json'
     }
@@ -523,46 +533,47 @@ function performSearch(uri) {
     var resultsContainer = query('ul', searchResults);
     var renderedResults = '';
 
-    if(err) {
-      console.error('google custom search', err.message);
-      resultsContainer.innerHTML = '<li class="search-error">' + err.message + '</li>';
-    }
-    else {
-      var results = JSON.parse(body);
-
-      if (results.items && results.items.length) {
-        renderedResults = results.items.map(function (item) {
-          if (!item.pagemap) {
-            return '';
-          }
-          return searchResultTmpl(item);
-        }).join('');
-
-        var previous = results.queries.previousPage ? results.queries.previousPage[0] : false;
-        if (previous) {
-          attr(pageButtons[0], 'disabled', null);
-          attr(pageButtons[0], 'data-searched', previous.searchTerms);
-          attr(pageButtons[0], 'data-start-index', previous.startIndex);
-        }
-
-        var next = results.queries.nextPage ? results.queries.nextPage[0] : false;
-        if (next) {
-          attr(pageButtons[1], 'disabled', null);
-          attr(pageButtons[1], 'data-searched', next.searchTerms);
-          attr(pageButtons[1], 'data-start-index', next.startIndex);
-        }
+      if(err) {
+        console.error('google custom search', err.message);
+        resultsContainer.innerHTML = '<li class="search-error">' + err.message + '</li>';
       }
       else {
-        renderedResults += '<li class="no-results">no results</li>';
+        var results = JSON.parse(body);
+        var hits = results.hits.hits;
+        var version = document.location.pathname.match(/^\/manual\/([^\/]+)/)[1];
+
+        if (hits && hits.length) {
+          renderedResults = hits.map(function (item) {
+            return searchResultTmpl(Object.assign(item._source, {
+              version: version
+            }));
+          }).join('');
+
+          // var previous = results.queries.previousPage ? results.queries.previousPage[0] : false;
+          // if (previous) {
+          //   attr(pageButtons[0], 'disabled', null);
+          //   attr(pageButtons[0], 'data-searched', previous.searchTerms);
+          //   attr(pageButtons[0], 'data-start-index', previous.startIndex);
+          // }
+          //
+          // var next = results.queries.nextPage ? results.queries.nextPage[0] : false;
+          // if (next) {
+          //   attr(pageButtons[1], 'disabled', null);
+          //   attr(pageButtons[1], 'data-searched', next.searchTerms);
+          //   attr(pageButtons[1], 'data-start-index', next.startIndex);
+          // }
+        }
+        else {
+          renderedResults += '<li class="no-results">no results</li>';
+        }
       }
-    }
 
-    resultsContainer.innerHTML = renderedResults;
+      resultsContainer.innerHTML = renderedResults;
 
-    bodyClasses.add('search-open');
+      bodyClasses.add('search-open');
 
-    query('li:first-of-type', resultsContainer).scrollIntoView();
-  });
+      // query('li:first-of-type', resultsContainer).scrollIntoView();
+    });
 }
 
 function searchEvent(evt) {
@@ -582,7 +593,7 @@ function searchEvent(evt) {
   }
   bodyClasses.add('search-open');
 
-  performSearch(searchUri + search);
+  performSearch(search);
 }
 
 searchField.addEventListener('change', searchEvent);
